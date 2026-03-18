@@ -36,11 +36,13 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
         with:
           args: >
+            -Dsonar.organization=${{ secrets.SONAR_ORG_KEY }}
             -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
             -Dsonar.projectName=acme-calculator-web
             -Dsonar.sources=.
             -Dsonar.exclusions=dist/**,node_modules/**,.github/**
             -Dsonar.sourceEncoding=UTF-8
+            -X
 
       - name: Register Sonar results in ServiceNow
         uses: ServiceNow/servicenow-devops-sonar@v3.1.0
