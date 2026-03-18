@@ -1,0 +1,82 @@
+name: pr-change-check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  change-check:
+    name: ServiceNow Change Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create ServiceNow Change
+        id: create_change
+        uses: ServiceNow/servicenow-devops-change@v6.1.0
+        with:
+          devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
+          instance-url: ${{ secrets.SN_INSTANCE_URL }}
+          tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
+          context-github: ${{ toJSON(github) }}
+          job-name: "ServiceNow Change Gate"
+          change-request: >
+            {
+              "attributes":{
+                "short_description":"PR Change for ACME Calculator",
+                "description":"Change created during PR validation. Merge blocked until approval."
+              }
+            }
+
+      - name: Capture Change Number
+        id: extract
+        run: |
+          echo "Raw output:"
+          echo '${{ steps.create_change.outputs.change-request-details }}'
+
+          CHANGE_NUMBER=$(echo '${{ steps.create_change.outputs.change-request-details }}' | jq -r '.number')
+          SYS_ID=$(echo '${{ steps.create_change.outputs.change-request-details }}' | jq -r '.sys_id')
+
+          echo "change_number=$CHANGE_NUMBER" >> $GITHUB_OUTPUT
+          echo "sys_id=$SYS_ID" >> $GITHUB_OUTPUT
+
+          echo "Created Change: $CHANGE_NUMBER"
+
+      - name: Display Change Link
+        run: |
+          echo "🔗 Change: ${{ secrets.SN_INSTANCE_URL }}/nav_to.do?uri=change_request.do?sys_id=${{ steps.extract.outputs.sys_id }}"
+
+      - name: Wait for Approval (Polling)
+        run: |
+          echo "Waiting for change approval..."
+
+          for i in {1..20}
+          do
+            RESPONSE=$(curl -s -u "${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}:" \
+              "${{ secrets.SN_INSTANCE_URL }}/api/now/table/change_request/${{ steps.extract.outputs.sys_id }}")
+
+            STATE=$(echo $RESPONSE | jq -r '.result.state')
+
+            echo "Attempt $i - Current State: $STATE"
+
+            # ServiceNow typical states:
+            # -2 = New
+            # -1 = Assess
+            # 0 = Authorize
+            # 1 = Scheduled
+            # 2 = Implement
+            # 3 = Review
+            # 4 = Closed
+
+            if [ "$STATE" = "1" ] || [ "$STATE" = "2" ]
+            then
+              echo "✅ Change approved and scheduled"
+              exit 0
+            fi
+
+            echo "⏳ Not approved yet. Waiting..."
+            sleep 30
+          done
+
+          echo "❌ Change not approved in time"
+          exit 1
