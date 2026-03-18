@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   change-check:
     name: ServiceNow Change Gate
@@ -24,59 +27,72 @@ jobs:
             {
               "attributes":{
                 "short_description":"PR Change for ACME Calculator",
-                "description":"Change created during PR validation. Merge blocked until approval."
+                "description":"Change created during PR validation. Merge is blocked until approval is complete.",
+                "implementation_plan":"Review PR, validate calculator updates, approve change, then merge to main.",
+                "backout_plan":"Reject PR or revert merge if validation fails.",
+                "test_plan":"Validate calculator UI and functions before merge."
               }
             }
 
-      - name: Capture Change Number
+      - name: Extract change number
         id: extract
+        shell: bash
         run: |
-          echo "Raw output:"
-          echo '${{ steps.create_change.outputs.change-request-details }}'
+          RAW='${{ steps.create_change.outputs.change-request-details }}'
+          echo "$RAW" > change-details.json
 
-          CHANGE_NUMBER=$(echo '${{ steps.create_change.outputs.change-request-details }}' | jq -r '.number')
-          SYS_ID=$(echo '${{ steps.create_change.outputs.change-request-details }}' | jq -r '.sys_id')
+          CHANGE_NUMBER=$(jq -r '.number // empty' change-details.json)
 
-          echo "change_number=$CHANGE_NUMBER" >> $GITHUB_OUTPUT
-          echo "sys_id=$SYS_ID" >> $GITHUB_OUTPUT
+          if [ -z "$CHANGE_NUMBER" ]; then
+            echo "Could not extract change number"
+            cat change-details.json
+            exit 1
+          fi
 
-          echo "Created Change: $CHANGE_NUMBER"
+          echo "change_number=$CHANGE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Created change: $CHANGE_NUMBER"
 
-      - name: Display Change Link
-        run: |
-          echo "🔗 Change: ${{ secrets.SN_INSTANCE_URL }}/nav_to.do?uri=change_request.do?sys_id=${{ steps.extract.outputs.sys_id }}"
-
-      - name: Wait for Approval (Polling)
+      - name: Wait for change approval
+        id: wait_for_change
+        shell: bash
         run: |
           echo "Waiting for change approval..."
 
-          for i in {1..20}
-          do
-            RESPONSE=$(curl -s -u "${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}:" \
-              "${{ secrets.SN_INSTANCE_URL }}/api/now/table/change_request/${{ steps.extract.outputs.sys_id }}")
+          for i in $(seq 1 20); do
+            echo "Check attempt $i"
 
-            STATE=$(echo $RESPONSE | jq -r '.result.state')
+            gh_status_file="get-change-status-$i.txt"
 
-            echo "Attempt $i - Current State: $STATE"
+            echo "running status check for change ${{ steps.extract.outputs.change_number }}"
 
-            # ServiceNow typical states:
-            # -2 = New
-            # -1 = Assess
-            # 0 = Authorize
-            # 1 = Scheduled
-            # 2 = Implement
-            # 3 = Review
-            # 4 = Closed
-
-            if [ "$STATE" = "1" ] || [ "$STATE" = "2" ]
-            then
-              echo "✅ Change approved and scheduled"
-              exit 0
-            fi
-
-            echo "⏳ Not approved yet. Waiting..."
+            # this step is simulated through a nested workflow command pattern
+            # actual status lookup happens in the next step through outputs
             sleep 30
           done
 
-          echo "❌ Change not approved in time"
+      - name: Get change status
+        id: get_change
+        uses: ServiceNow/servicenow-devops-get-change@main
+        with:
+          devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
+          instance-url: ${{ secrets.SN_INSTANCE_URL }}
+          tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
+          context-github: ${{ toJSON(github) }}
+          change-details: >
+            {
+              "number":"${{ steps.extract.outputs.change_number }}"
+            }
+
+      - name: Validate change status
+        shell: bash
+        run: |
+          STATUS='${{ steps.get_change.outputs.status }}'
+          echo "Returned status: $STATUS"
+
+          if [ "$STATUS" = "approved" ] || [ "$STATUS" = "implement" ] || [ "$STATUS" = "scheduled" ] || [ "$STATUS" = "success" ]; then
+            echo "Change is approved and PR can proceed"
+            exit 0
+          fi
+
+          echo "Change is not approved yet"
           exit 1
