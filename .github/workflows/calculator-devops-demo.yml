@@ -100,10 +100,7 @@ jobs:
                 "description":"Automated deployment of ACME Calculator demo app with GitHub Actions, Sonar quality traceability, and ServiceNow DevOps Change Velocity.",
                 "implementation_plan":"Validate source files, run Sonar scan, register Sonar results in ServiceNow, create change, and deploy calculator artifact.",
                 "backout_plan":"Rollback to previous GitHub commit or previous build artifact if validation fails.",
-                "test_plan":"Verify calculator loads and supports add, subtract, multiply, divide, decimal, clear, and delete operations.",
-                "category":"Software",
-                "priority":"3",
-                "risk":"3"
+                "test_plan":"Verify calculator loads and supports add, subtract, multiply, divide, decimal, clear, and delete operations."
               }
             }
 
