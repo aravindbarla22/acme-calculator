@@ -1,0 +1,93 @@
+name: calculator-devops-demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Validate calculator files
+        run: |
+          test -f index.html
+          test -f styles.css
+          test -f script.js
+          echo "Calculator files validated"
+
+      - name: Package app
+        run: |
+          mkdir -p dist
+          cp index.html dist/
+          cp styles.css dist/
+          cp script.js dist/
+          echo "Calculator app packaged"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acme-calculator-build
+          path: dist/
+
+      - name: Register Sonar results in ServiceNow
+        uses: ServiceNow/servicenow-devops-sonar@v3.1.0
+        with:
+          devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
+          instance-url: ${{ secrets.SN_INSTANCE_URL }}
+          tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
+          context-github: ${{ toJSON(github) }}
+          job-name: "Build"
+          sonar-host-url: ${{ secrets.SONAR_URL }}
+          sonar-project-key: ${{ secrets.SONAR_PROJECT_KEY }}
+          sonar-org-key: ${{ secrets.SONAR_ORG_KEY }}
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: acme-calculator-build
+          path: dist/
+
+      - name: Create ServiceNow Change
+        id: create_change
+        uses: ServiceNow/servicenow-devops-change@v6.1.0
+        with:
+          devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
+          instance-url: ${{ secrets.SN_INSTANCE_URL }}
+          tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
+          context-github: ${{ toJSON(github) }}
+          job-name: "Deploy"
+          change-request: >
+            {
+              "setCloseCode":"true",
+              "autoCloseChange":true,
+              "attributes":{
+                "short_description":"Deploy ACME Calculator to production",
+                "description":"Automated deployment of ACME Calculator demo app with GitHub Actions, Sonar quality traceability, and ServiceNow DevOps Change Velocity.",
+                "implementation_plan":"Validate source files, register Sonar results, create change, and deploy static calculator artifact.",
+                "backout_plan":"Rollback to previous GitHub commit or previous build artifact if validation fails.",
+                "test_plan":"Verify calculator loads and supports add, subtract, multiply, divide, decimal, clear, and delete operations.",
+                "category":"Software",
+                "priority":"3",
+                "risk":"3"
+              }
+            }
+
+      - name: Simulate deployment
+        run: |
+          test -f dist/index.html
+          test -f dist/styles.css
+          test -f dist/script.js
+          echo "Deployment completed successfully"
