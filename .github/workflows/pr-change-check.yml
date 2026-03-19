@@ -26,11 +26,11 @@ jobs:
           change-request: >
             {
               "attributes":{
-                "short_description":"PR Change for ACME Calculator",
-                "description":"Change created during PR validation. Merge is blocked until approval is complete.",
-                "implementation_plan":"Review PR, validate calculator updates, approve change, then merge to main.",
-                "backout_plan":"Reject PR or revert merge if validation fails.",
-                "test_plan":"Validate calculator UI and functions before merge."
+                "short_description":"Deploy ACME Calculator to production",
+                "description":"Automated deployment of ACME Calculator demo app with GitHub Actions, Sonar quality traceability, and ServiceNow DevOps Change Velocity.",
+                "implementation_plan":"Validate source files, run Sonar scan, register Sonar results in ServiceNow, create change, and deploy calculator artifact.",
+                "backout_plan":"Rollback to previous GitHub commit or previous build artifact if validation fails.",
+                "test_plan":"Verify calculator loads and supports add, subtract, multiply, divide, decimal, clear, and delete operations."
               }
             }
 
